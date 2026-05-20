@@ -219,7 +219,7 @@ export function TradeEvaluator({ myRoster, allPlayers, sellCandidates, buyCandid
         {intelTab === 'partners' && (
           <div className="space-y-3">
             {tradePartners.length === 0 ? (
-              <p className="text-xs text-gray-600 px-1">No strong positional matches — your needs and their surpluses don't align yet</p>
+              <p className="text-xs text-gray-600 px-1">No strong positional matches — your needs and their surpluses don&apos;t align yet</p>
             ) : tradePartners.map((partner) => (
               <div key={partner.rosterId} className="space-y-1">
                 <div className="flex items-center justify-between px-1">
@@ -244,7 +244,7 @@ export function TradeEvaluator({ myRoster, allPlayers, sellCandidates, buyCandid
         {intelTab === 'sell' && (
           <div className="space-y-1">
             {sellCandidates.length === 0 ? (
-              <p className="text-xs text-gray-600 px-1">No sell candidates — aging players aren't rising right now</p>
+              <p className="text-xs text-gray-600 px-1">No sell candidates — aging players aren&apos;t rising right now</p>
             ) : sellCandidates.map(({ player, reason }) => (
               <IntelRow key={player.sleeperId} player={player} reason={reason} trend={player.trend30Day} side="giving" />
             ))}
