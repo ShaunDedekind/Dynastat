@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* All number cells use tabular figures by default */
+  td, th {
+    font-variant-numeric: tabular-nums;
+  }
+}
