@@ -8,8 +8,8 @@ export type RosterPlayer = {
   position: string
   nflTeam: string | null
   age: number | null
-  value: number       // 0 if not in FantasyCalc (K, DEF, unranked rookies)
-  trend30Day: number  // point delta over 30 days
+  value: number
+  trend30Day: number
   isUntouchable: boolean
 }
 
@@ -18,19 +18,22 @@ export type TeamRoster = {
   ownerName: string
   teamName: string
   isMe: boolean
-  players: RosterPlayer[]       // sorted by value desc
+  players: RosterPlayer[]
   totalValue: number
   valueByPosition: Record<ScoredPosition, number>
-  avgAge: number                // value-weighted, excludes null ages and value=0
-  rank?: number                 // assigned after sort
+  avgAge: number
+  rank: number
 }
+
+// Internal — rank assigned after sort
+type TeamRosterUnranked = Omit<TeamRoster, 'rank'>
 
 export async function buildTeamRosters(): Promise<TeamRoster[]> {
   // DB SEAM: This function fetches live and joins in memory.
   // To add season-long value history (FantasyCalc only gives 30-day trends):
   //   1. Write the returned TeamRoster[] to a `team_snapshots` table after building
   //   2. Add a separate query path that reads historical snapshots for trend overlays
-  // Insert point: replace the `return sorted` below with a write+return.
+  // Insert point: after `const sorted = ...` below, write snapshot then return sorted.
 
   const [rosters, users, players, values] = await Promise.all([
     fetchRosters(),
@@ -39,31 +42,26 @@ export async function buildTeamRosters(): Promise<TeamRoster[]> {
     fetchValues(),
   ])
 
-  // userId → display info
   const userMap = new Map(users.map((u) => [u.user_id, u]))
 
-  // sleeperId → FantasyCalc value object
+  // sleeperId → FantasyCalc value entry
   const fcMap = new Map<string, (typeof values)[number]>()
   for (const v of values) {
-    if (v.player.sleeperId) {
-      fcMap.set(v.player.sleeperId, v)
-    }
+    if (v.player.sleeperId) fcMap.set(v.player.sleeperId, v)
   }
 
-  const teamRosters: TeamRoster[] = rosters.map((roster) => {
+  const unranked: TeamRosterUnranked[] = rosters.map((roster) => {
     const user = userMap.get(roster.owner_id)
     const ownerName = user?.display_name ?? `Roster ${roster.roster_id}`
     const teamName = user?.metadata?.team_name ?? ownerName
 
-    // roster.players already includes taxi squad — no double-counting
+    // roster.players already includes taxi squad — no double-counting needed
     const playerIds = roster.players ?? []
 
     const enrichedPlayers: RosterPlayer[] = playerIds.map((id) => {
       const sp = players[id]
       const fc = fcMap.get(id)
-
       const name = sp?.full_name ?? `Unknown (${id})`
-
       return {
         sleeperId: id,
         name,
@@ -76,22 +74,20 @@ export async function buildTeamRosters(): Promise<TeamRoster[]> {
       }
     })
 
-    const totalValue = enrichedPlayers.reduce((sum, p) => sum + p.value, 0)
+    const totalValue = enrichedPlayers.reduce((s, p) => s + p.value, 0)
 
     const valueByPosition = Object.fromEntries(
       SCORED_POSITIONS.map((pos) => [
         pos,
-        enrichedPlayers
-          .filter((p) => p.position === pos)
-          .reduce((sum, p) => sum + p.value, 0),
+        enrichedPlayers.filter((p) => p.position === pos).reduce((s, p) => s + p.value, 0),
       ])
     ) as Record<ScoredPosition, number>
 
-    // Value-weighted average age — excludes unranked/unvalued players and null ages
-    const valuedWithAge = enrichedPlayers.filter((p) => p.age !== null && p.value > 0)
-    const weightedAgeSum = valuedWithAge.reduce((sum, p) => sum + p.age! * p.value, 0)
-    const valueWeight = valuedWithAge.reduce((sum, p) => sum + p.value, 0)
-    const avgAge = valueWeight > 0 ? weightedAgeSum / valueWeight : 0
+    // Value-weighted average age — excludes players with no value or no age
+    const withAge = enrichedPlayers.filter((p) => p.age !== null && p.value > 0)
+    const wAgeSum = withAge.reduce((s, p) => s + p.age! * p.value, 0)
+    const wSum = withAge.reduce((s, p) => s + p.value, 0)
+    const avgAge = wSum > 0 ? wAgeSum / wSum : 0
 
     return {
       rosterId: roster.roster_id,
@@ -105,17 +101,7 @@ export async function buildTeamRosters(): Promise<TeamRoster[]> {
     }
   })
 
-  const sorted = teamRosters
+  return unranked
     .sort((a, b) => b.totalValue - a.totalValue)
-    .map((t, i) => ({ ...t, rank: i + 1 }))
-
-  return sorted
-}
-
-/** Milliseconds since a Date — for computing data freshness display */
-export function getFreshness(fetchedAt: Date): string {
-  const diffMs = Date.now() - fetchedAt.getTime()
-  const diffH = Math.round(diffMs / 1000 / 60 / 60)
-  if (diffH < 1) return 'just now'
-  return `${diffH}h ago`
+    .map((t, i): TeamRoster => ({ ...t, rank: i + 1 }))
 }
