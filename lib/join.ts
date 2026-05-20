@@ -11,6 +11,10 @@ export type RosterPlayer = {
   value: number
   trend30Day: number
   isUntouchable: boolean
+  isRookie: boolean
+  injuryStatus: string | null
+  depthChartOrder: number | null
+  college: string | null
 }
 
 export type TeamRoster = {
@@ -25,15 +29,11 @@ export type TeamRoster = {
   rank: number
 }
 
-// Internal — rank assigned after sort
 type TeamRosterUnranked = Omit<TeamRoster, 'rank'>
 
 export async function buildTeamRosters(): Promise<TeamRoster[]> {
-  // DB SEAM: This function fetches live and joins in memory.
-  // To add season-long value history (FantasyCalc only gives 30-day trends):
-  //   1. Write the returned TeamRoster[] to a `team_snapshots` table after building
-  //   2. Add a separate query path that reads historical snapshots for trend overlays
-  // Insert point: after `const sorted = ...` below, write snapshot then return sorted.
+  // DB SEAM: replace `return sorted` with a write to `team_snapshots` table,
+  // then return from DB for full season value history (FC only gives 30-day trends).
 
   const [rosters, users, players, values] = await Promise.all([
     fetchRosters(),
@@ -44,7 +44,6 @@ export async function buildTeamRosters(): Promise<TeamRoster[]> {
 
   const userMap = new Map(users.map((u) => [u.user_id, u]))
 
-  // sleeperId → FantasyCalc value entry
   const fcMap = new Map<string, (typeof values)[number]>()
   for (const v of values) {
     if (v.player.sleeperId) fcMap.set(v.player.sleeperId, v)
@@ -55,7 +54,6 @@ export async function buildTeamRosters(): Promise<TeamRoster[]> {
     const ownerName = user?.display_name ?? `Roster ${roster.roster_id}`
     const teamName = user?.metadata?.team_name ?? ownerName
 
-    // roster.players already includes taxi squad — no double-counting needed
     const playerIds = roster.players ?? []
 
     const enrichedPlayers: RosterPlayer[] = playerIds.map((id) => {
@@ -71,6 +69,10 @@ export async function buildTeamRosters(): Promise<TeamRoster[]> {
         value: fc?.value ?? 0,
         trend30Day: fc?.trend30Day ?? 0,
         isUntouchable: isUntouchable(name),
+        isRookie: (sp?.years_exp ?? 1) === 0,
+        injuryStatus: sp?.injury_status ?? null,
+        depthChartOrder: sp?.depth_chart_order ?? null,
+        college: sp?.college ?? null,
       }
     })
 
@@ -83,7 +85,6 @@ export async function buildTeamRosters(): Promise<TeamRoster[]> {
       ])
     ) as Record<ScoredPosition, number>
 
-    // Value-weighted average age — excludes players with no value or no age
     const withAge = enrichedPlayers.filter((p) => p.age !== null && p.value > 0)
     const wAgeSum = withAge.reduce((s, p) => s + p.age! * p.value, 0)
     const wSum = withAge.reduce((s, p) => s + p.value, 0)
