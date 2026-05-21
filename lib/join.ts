@@ -10,6 +10,7 @@ export type RosterPlayer = {
   age: number | null
   value: number
   trend30Day: number
+  overallRank: number | null
   isUntouchable: boolean
   isRookie: boolean
   injuryStatus: string | null
@@ -68,6 +69,7 @@ export async function buildTeamRosters(): Promise<TeamRoster[]> {
         age: sp?.age ?? null,
         value: fc?.value ?? 0,
         trend30Day: fc?.trend30Day ?? 0,
+        overallRank: fc?.overallRank ?? null,
         isUntouchable: isUntouchable(name),
         isRookie: (sp?.years_exp ?? 1) === 0,
         injuryStatus: sp?.injury_status ?? null,

@@ -9,5 +9,5 @@ export type FCValue = {
   player: FCPlayerInfo
   value: number
   trend30Day: number
-  overallRank?: number
+  overallRank: number | null
 }
