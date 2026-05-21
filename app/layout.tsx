@@ -14,14 +14,17 @@ export const metadata: Metadata = {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Passed to Nav so it can compute "values: Xh ago" on the client.
+  // With ISR, this timestamp reflects when data was last fetched.
+  const renderTime = Date.now()
+
   return (
     <html lang="en">
       <body
         className={`${inter.variable} font-sans bg-gray-950 text-gray-100 min-h-screen antialiased`}
       >
-        {/* pt-12: desktop top nav height | pb-16: mobile bottom nav height */}
         <div className="md:pt-12 pb-16 md:pb-0">{children}</div>
-        <Nav />
+        <Nav renderTime={renderTime} />
       </body>
     </html>
   )
