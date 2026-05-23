@@ -9,6 +9,7 @@ const TABS = [
   { href: '/my-team', label: 'My Team' },
   { href: '/lineup', label: 'Lineup' },
   { href: '/trade', label: 'Trade' },
+  { href: '/strategy', label: 'Strategy' },
   { href: '/trending', label: 'Trending' },
 ]
 

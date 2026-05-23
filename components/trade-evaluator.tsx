@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import type { RosterPlayer } from '@/lib/join'
 import type { BuySellCandidate, TradePartner } from '@/lib/analysis'
 import { InjuryBadge, RookieBadge } from '@/components/player-badges'
+import type { Strategy } from '@/types/strategy'
+import { StrategySchema } from '@/types/strategy'
+import { STORAGE_KEY, EMPTY_STRATEGY, getPlayerRole, getConditionalReturn, isSurplus } from '@/lib/strategy'
 
 const AGE_RISK_THRESHOLD = 29
 
@@ -27,12 +30,13 @@ function getVerdict(giving: number, receiving: number) {
 }
 
 function SidePanel({
-  side, label, onRemove, onPicksChange,
+  side, label, strategy, onRemove, onPicksChange,
 }: {
-  side: TradeSide; label: string
+  side: TradeSide; label: string; strategy: Strategy
   onRemove: (id: string) => void; onPicksChange: (v: string) => void
 }) {
   const total = sideTotal(side)
+  const isGiving = label === 'Giving'
   return (
     <div className="bg-gray-900 rounded-lg p-3 flex flex-col gap-2">
       <div className="flex items-center justify-between">
@@ -42,29 +46,51 @@ function SidePanel({
       {side.players.length === 0 ? (
         <p className="text-xs text-gray-700 py-1">No players added</p>
       ) : (
-        side.players.map((p) => (
-          <div key={p.sleeperId} className="flex items-center gap-2">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap text-sm font-medium leading-tight">
-                <span className="truncate">{p.name}</span>
-                {p.isUntouchable && <span className="text-yellow-500 text-xs shrink-0">🔒</span>}
-                <RookieBadge isRookie={p.isRookie} />
-                <InjuryBadge status={p.injuryStatus} />
+        side.players.map((p) => {
+          const role = getPlayerRole(strategy, p.sleeperId)
+          const condReturn = role === 'conditional' ? getConditionalReturn(strategy, p.sleeperId) : null
+          const surplus = isSurplus(strategy, p.sleeperId)
+          return (
+            <div key={p.sleeperId} className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap text-sm font-medium leading-tight">
+                    <span className="truncate">{p.name}</span>
+                    {p.isUntouchable && <span className="text-yellow-500 text-xs shrink-0">🔒</span>}
+                    {surplus && (
+                      <span className="inline-flex items-center text-xs px-1 py-px rounded font-bold leading-none bg-gray-800 text-gray-500 shrink-0">
+                        MOVABLE
+                      </span>
+                    )}
+                    <RookieBadge isRookie={p.isRookie} />
+                    <InjuryBadge status={p.injuryStatus} />
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {p.position} · {p.nflTeam ?? 'FA'} · {p.age ? `${p.age}y` : '—'}
+                    {label === 'Receiving' && p.age !== null && p.age >= AGE_RISK_THRESHOLD && (
+                      <span className="ml-1 text-amber-500">⚠</span>
+                    )}
+                  </div>
+                </div>
+                <span className="text-gray-300 tabular-nums text-sm shrink-0">{(p.value / 1000).toFixed(1)}k</span>
+                <button
+                  onClick={() => onRemove(p.sleeperId)}
+                  className="text-gray-600 hover:text-red-400 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center text-lg"
+                >×</button>
               </div>
-              <div className="text-xs text-gray-500">
-                {p.position} · {p.nflTeam ?? 'FA'} · {p.age ? `${p.age}y` : '—'}
-                {label === 'Receiving' && p.age !== null && p.age >= AGE_RISK_THRESHOLD && (
-                  <span className="ml-1 text-amber-500">⚠</span>
-                )}
-              </div>
+              {isGiving && role === 'never_trade' && (
+                <div className="text-xs text-red-300 bg-red-950/40 border border-red-800/40 rounded px-2 py-1">
+                  🚫 Never trade — {p.name}
+                </div>
+              )}
+              {isGiving && role === 'conditional' && (
+                <div className="text-xs text-amber-300 bg-amber-950/30 border border-amber-800/40 rounded px-2 py-1">
+                  ⚡ Conditional: {condReturn ?? 'set return requirement in Strategy'}
+                </div>
+              )}
             </div>
-            <span className="text-gray-300 tabular-nums text-sm shrink-0">{(p.value / 1000).toFixed(1)}k</span>
-            <button
-              onClick={() => onRemove(p.sleeperId)}
-              className="text-gray-600 hover:text-red-400 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center text-lg"
-            >×</button>
-          </div>
-        ))
+          )
+        })
       )}
       <div className="flex items-center gap-2 pt-2 border-t border-gray-800">
         <label className="text-xs text-gray-500 shrink-0">Picks $</label>
@@ -92,6 +118,13 @@ export function TradeEvaluator({ myRoster, allPlayers, sellCandidates, buyCandid
   const [search, setSearch] = useState('')
   const [target, setTarget] = useState<'giving' | 'receiving'>('receiving')
   const [intelTab, setIntelTab] = useState<'partners' | 'sell' | 'buy'>('partners')
+  const [strategy, setStrategy] = useState<Strategy>(EMPTY_STRATEGY)
+
+  useEffect(() => {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+    try { setStrategy(StrategySchema.parse(JSON.parse(raw))) } catch { /* use empty */ }
+  }, [])
 
   const givingTotal = sideTotal(giving)
   const receivingTotal = sideTotal(receiving)
@@ -140,6 +173,14 @@ export function TradeEvaluator({ myRoster, allPlayers, sellCandidates, buyCandid
     ]
     if (ageRisks.length > 0)
       lines.push('', `**⚠ Timeline risk (2027 window):** ${ageRisks.map((p) => `${p.name} (${p.age})`).join(', ')}`)
+    const neverFlags = giving.players.filter((p) => getPlayerRole(strategy, p.sleeperId) === 'never_trade')
+    const condFlags = giving.players.filter((p) => getPlayerRole(strategy, p.sleeperId) === 'conditional')
+    if (neverFlags.length > 0)
+      lines.push('', `**🚫 Never trade:** ${neverFlags.map((p) => p.name).join(', ')}`)
+    for (const p of condFlags) {
+      const ret = getConditionalReturn(strategy, p.sleeperId)
+      lines.push('', `**⚡ Conditional (${p.name}):** ${ret ?? 'set return requirement in Strategy'}`)
+    }
     return lines.join('\n')
   }
 
@@ -264,11 +305,11 @@ export function TradeEvaluator({ myRoster, allPlayers, sellCandidates, buyCandid
 
       {/* Sides */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <SidePanel side={giving} label="Giving"
+        <SidePanel side={giving} label="Giving" strategy={strategy}
           onRemove={(id) => setGiving((prev) => ({ ...prev, players: prev.players.filter((p) => p.sleeperId !== id) }))}
           onPicksChange={(v) => setGiving((prev) => ({ ...prev, picksValue: v }))}
         />
-        <SidePanel side={receiving} label="Receiving"
+        <SidePanel side={receiving} label="Receiving" strategy={strategy}
           onRemove={(id) => setReceiving((prev) => ({ ...prev, players: prev.players.filter((p) => p.sleeperId !== id) }))}
           onPicksChange={(v) => setReceiving((prev) => ({ ...prev, picksValue: v }))}
         />
