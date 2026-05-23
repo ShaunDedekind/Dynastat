@@ -88,3 +88,36 @@ See the comment block in that function for the exact swap.
 - Desktop: fixed top bar (h-12)
 - Mobile: fixed bottom bar (h-16), thumb zone
 - Content area: `md:pt-12 pb-16 md:pb-0`
+
+## Strategy layer
+Strategy is STRUCTURED, EDITABLE data — not hardcoded constants. Persisted
+client-side (localStorage for v1; the DB seam covers it later). Replaces the
+flat "untouchables" line above with tiered player roles.
+
+### Schema (types/strategy.ts)
+- timeline: { stance: 'rebuild'|'consolidate'|'contend', contendYear: number }
+- playerRoles: Record<sleeperId, 'never_trade'|'conditional'|'hold'|'surplus'>
+    - never_trade: never appears in an outgoing suggestion; hard-flag if added
+    - conditional: tradeable only for a defined return (see conditionalReturn)
+    - hold: keep by default, but not sacred — soft-flag, don't block
+    - surplus: actively shopping; highlight in evaluator as "movable"
+- conditionalReturn: Record<sleeperId, string>  // free-text return requirement,
+    shown to me in evaluator. NOT machine-enforced — I judge it.
+- targets: ordered [{ sleeperId? , position?, maxAge, note }]
+- constraints: { maxAcquireAge?: number, flagAddsOlderThanContendWindow: bool }
+
+### How the evaluator uses it
+- Adding a never_trade player to the outgoing side → hard red flag.
+- Adding a conditional player → show its conditionalReturn requirement inline.
+- Acquiring a player older than contendYear window → timeline flag (existing behavior).
+- A surplus player on either side → subtle "movable" marker.
+The evaluator still only shows values, diffs, flags. It does NOT recommend or
+rank trades. Judgment stays in the Claude chat. No trade auto-finder in v1.
+
+### Current strategy values (seed defaults)
+- timeline: rebuild, 2027
+- never_trade: C.J. Stroud, Quinshon Judkins, Jalen Milroe
+- conditional: Brock Bowers → "young RB1 (≤24) or elite WR1 + meaningful pick"
+- hold: DJ Moore (29 — last productive year, sell-eligible if offer is strong)
+- surplus: Wan'Dale Robinson, Jakobi Meyers, Andrei Iosivas, Luke McCaffrey,
+    Tez Johnson, Jalen Royals, Brenton Strange
